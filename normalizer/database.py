@@ -4,6 +4,7 @@ from pymongo import MongoClient, ASCENDING, TEXT
 from pymongo.errors import ConnectionFailure, DuplicateKeyError
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from pathlib import Path
 import logging
 import os
 
@@ -11,16 +12,29 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class MongoDBHandler:
-    def __init__(self, uri: str = None, db_name: str = "hub_estudantes"):
-      
+    def __init__(self, uri: str = None, db_name: str = "hub_estudantes", client=None):
+        
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(Path(__file__).resolve().parents[3] / ".env")
+        except ImportError:
+            pass
+
         self.uri = uri or os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
         self.db_name = db_name
         self.client = None
         self.db = None
-        self._connect()
+
+        if client is not None:
+            # Injeção de dependência (ex.: mongomock em testes)
+            self.client = client
+            self.db = self.client[self.db_name]
+            logger.info(f"MongoDBHandler usando cliente injetado: {self.db_name}")
+        else:
+            self._connect()
 
     def _connect(self) -> None:
-        """Estabelece conexão com MongoDB"""
+       
         try:
             self.client = MongoClient(
                 self.uri,
@@ -48,13 +62,11 @@ class MongoDBHandler:
             editais.create_index([("status", ASCENDING), ("areas", ASCENDING)],
                                name="idx_status_areas_composto")
 
-            # Coleção de vagas
             vagas = self.db['vagas']
             vagas.create_index([("area", ASCENDING)], name="idx_area")
             vagas.create_index([("fonte", ASCENDING)], name="idx_fonte")
             vagas.create_index([("titulo", TEXT)], name="idx_busca_titulo_vaga")
 
-            # Coleção de notícias
             noticias = self.db['noticias']
             noticias.create_index([("categoria", ASCENDING)], name="idx_categoria")
             noticias.create_index([("data_publicacao", ASCENDING)], name="idx_data_pub")
@@ -65,7 +77,7 @@ class MongoDBHandler:
             logger.error(f"Erro ao criar índices: {str(e)}")
 
     def insert_edital(self, edital_data: Dict[str, Any]) -> Optional[str]:
-    
+
         try:
             edital_data['atualizado_em'] = datetime.now().isoformat()
             result = self.db['editais'].insert_one(edital_data)
@@ -79,7 +91,7 @@ class MongoDBHandler:
             return None
 
     def insert_vaga(self, vaga_data: Dict[str, Any]) -> Optional[str]:
-     
+
         try:
             vaga_data['atualizado_em'] = datetime.now().isoformat()
             result = self.db['vagas'].insert_one(vaga_data)
@@ -90,7 +102,7 @@ class MongoDBHandler:
             return None
 
     def insert_noticia(self, noticia_data: Dict[str, Any]) -> Optional[str]:
-     
+
         try:
             noticia_data['atualizado_em'] = datetime.now().isoformat()
             result = self.db['noticias'].insert_one(noticia_data)
